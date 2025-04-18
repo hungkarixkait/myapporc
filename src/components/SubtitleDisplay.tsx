@@ -2,10 +2,11 @@ import React, { useState, useEffect } from "react";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
 import useAuthStore from "@/store/use-auth-store";
 import useVideoStore from "@/store/use-video-store";
+import useStore from "@/pages/editor/store/use-store";
 
 // Hàm phân tích nội dung SRT
 const parseSRT = (srtContent: string) => {
-  const subtitles = [];
+  const subtitles: Subtitle[] = [];
   const blocks = srtContent.trim().split(/\n\s*\n/);
   
   blocks.forEach(block => {
@@ -62,16 +63,37 @@ const formatTime = (seconds: number): string => {
   return `${min}:${sec < 10 ? "0" : ""}${sec}s`;
 };
 
-const SubtitleDisplay: React.FC<SubtitleDisplayProps> = ({ subtitles: propSubtitles, maxSceneTime = 60 }) => {
+const SubtitleDisplay: React.FC<SubtitleDisplayProps> = ({ subtitles: propSubtitles, maxSceneTime: propMaxSceneTime }) => {
   const { isAuthenticated, accessToken } = useAuthStore();
   const { selectedVideoId } = useVideoStore();
+  const store = useStore();
+  const [maxSceneTime, setMaxSceneTime] = useState<number>(propMaxSceneTime || 60);
   const [allLt1State, setAllLt1State] = useState<boolean>(false);
   const [allLt2State, setAllLt2State] = useState<boolean>(false);
   const [allLt3State, setAllLt3State] = useState<boolean>(false);
   const [subtitles, setSubtitles] = useState<Subtitle[]>(propSubtitles || []);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-    // Fetch subtitles from API when component is mounted
+  
+  // Cập nhật maxSceneTime từ thời lượng video trong store
+  useEffect(() => {
+    if (store.trackItemsMap) {
+      // Tìm video item trong trackItemsMap
+      const videoItems = Object.values(store.trackItemsMap).filter(item => item.type === "video");
+      
+      if (videoItems.length > 0 && videoItems[0]) {
+        // Nếu có thông tin duration, cập nhật maxSceneTime
+        if (videoItems[0].duration) {
+          // Chuyển từ milliseconds sang seconds
+          const durationInSeconds = Math.floor(videoItems[0].duration / 1000);
+          console.log(`Cập nhật thời lượng video từ metadata: ${durationInSeconds}s`);
+          setMaxSceneTime(durationInSeconds);
+        }
+      }
+    }
+  }, [store.trackItemsMap]);
+  
+  // Fetch subtitles from API when component is mounted
   useEffect(() => {
     // If subtitles are provided through props, use them
     if (propSubtitles && propSubtitles.length > 0) {

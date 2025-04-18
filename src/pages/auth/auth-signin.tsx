@@ -75,8 +75,8 @@ export default function AuthSignin() {
           <div className="mx-auto w-full max-w-md">
             <div>
               <div className="flex items-center gap-2 text-sm font-medium">
-                <img src={logoDark} alt="logo" className="h-5 w-5" />
-                <div>DesignCombo</div>
+                <img src={logoDark} alt="logo" className="h-12 w-12" />
+                <div>AI THUYẾT MINH</div>
               </div>
               <h2 className="mt-8 text-2xl font-bold leading-9 tracking-tight text-black dark:text-white">
                 Create your account

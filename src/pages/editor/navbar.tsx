@@ -15,6 +15,8 @@ import { Progress } from "@/components/ui/progress";
 import { download } from "@/utils/download";
 import useAuthStore from "@/store/use-auth-store";
 import { useNavigate } from "react-router-dom";
+import useStore from "@/pages/editor/store/use-store";
+import useVideoStore from "@/store/use-video-store";
 
 import {
   Cloud,
@@ -47,7 +49,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import useStore from "@/pages/editor/store/use-store";
 import { generateId } from "@designcombo/timeline";
 const baseUrl = "https://renderer.designcombo.dev";
 const size = {
@@ -56,6 +57,60 @@ const size = {
 };
 //  https://renderer.designcombo.dev/status/{id}
 export default function Navbar() {
+  const [videoName, setVideoName] = useState("Untitled video");
+  const store = useStore();
+  const { selectedVideoId, videos } = useVideoStore();
+  
+  useEffect(() => {
+    // Tìm tên video từ danh sách videos nếu có selectedVideoId
+    if (selectedVideoId && videos && videos.length > 0) {
+      const selectedVideo = videos.find(video => video.video_id === selectedVideoId);
+      if (selectedVideo) {
+        setVideoName(selectedVideo.file_name || "Untitled video");
+        return;
+      }
+    }
+    
+    // Nếu không tìm thấy trong videos, thử lấy từ trackItemsMap
+    if (store.trackItemsMap) {
+      // Tìm video item trong trackItemsMap
+      const videoItems = Object.values(store.trackItemsMap).filter(item => item.type === "video");
+      
+      if (videoItems.length > 0 && videoItems[0]) {
+        // Nếu video có metadata chứa tên tệp
+        if (videoItems[0].metadata && videoItems[0].metadata.fileName) {
+          setVideoName(videoItems[0].metadata.fileName);
+        } 
+        // Nếu video có metadata chứa tên video
+        else if (videoItems[0].metadata && videoItems[0].metadata.videoName) {
+          setVideoName(videoItems[0].metadata.videoName);
+        }
+        // Nếu có name thuộc tính
+        else if (videoItems[0].name && videoItems[0].name !== "video") {
+          setVideoName(videoItems[0].name);
+        }
+        // Trường hợp không có tên trong metadata, trích xuất từ URL
+        else if (videoItems[0].details && videoItems[0].details.src) {
+          try {
+            const videoSrc = videoItems[0].details.src;
+            const url = new URL(videoSrc);
+            const pathname = decodeURIComponent(url.pathname);
+            const filename = pathname.substring(pathname.lastIndexOf('/') + 1);
+            const nameWithoutExtension = filename.replace(/\.[^/.]+$/, "");
+            const cleanName = nameWithoutExtension.replace(/%20/g, ' ');
+            
+            setVideoName(cleanName || "Untitled video");
+          } catch (error) {
+            console.error("Error parsing video URL:", error);
+            setVideoName("Untitled video");
+          }
+        } else {
+          setVideoName("Untitled video");
+        }
+      }
+    }
+  }, [store.trackItemsMap, selectedVideoId, videos]);
+
   const handleUndo = () => {
     dispatch(HISTORY_UNDO);
   };
@@ -77,8 +132,8 @@ export default function Navbar() {
       className="pointer-events-none absolute left-0 right-0 top-0 z-[205] flex h-[72px] items-center px-2"
     >
       <div className="pointer-events-auto flex h-14 items-center gap-2">
-        <div className="flex h-12 w-12 items-center justify-center rounded-md bg-background">
-          <img src={logoDark} alt="logo" className="h-5 w-5" />
+        <div className="flex h-16 w-16 items-center justify-center rounded-md bg-background">
+          <img src={logoDark} alt="logo" className="h-16 w-16" />
         </div>
         <div className="flex h-12 items-center bg-background px-1.5">
           <Button
@@ -102,7 +157,7 @@ export default function Navbar() {
 
       <div className="pointer-events-auto flex h-14 items-center justify-center gap-2">
         <div className="flex h-12 items-center gap-4 rounded-md bg-background px-2.5">
-          <div className="px-1 text-sm font-medium">Untitled video</div>
+          <div className="px-1 text-sm font-medium">{videoName}</div>
           <ResizeVideo />
         </div>
       </div>
