@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import waveTop from "@/assets/wave-top.png";
 import waveMid from "@/assets/wave-mid.png";
 import waveBot from "@/assets/wave-bot.png";
@@ -39,6 +39,51 @@ export const Dubbing = () => {
   const { selectedVideoId } = useVideoStore(); // Lấy video_id từ store
   const { accessToken } = useAuthStore(); // Lấy access token từ store
   const { setShowMenuItem, setActiveMenuItem } = useLayoutStore(); // Lấy hàm đóng modal từ store
+  
+  // Kiểm tra xem có video_tts_id trong localStorage không khi component mount
+  useEffect(() => {
+    if (selectedVideoId) {
+      // Kiểm tra xem có video_tts_id cho video này không trong localStorage
+      try {
+        // Lấy map của video_id -> video_tts_id từ localStorage
+        const videoTtsMap = JSON.parse(localStorage.getItem('videoTtsMap') || '{}');
+        
+        // Kiểm tra xem có video_tts_id cho video này không
+        if (videoTtsMap[selectedVideoId]) {
+          const storedVideoTtsId = videoTtsMap[selectedVideoId];
+          console.log(`Đã tìm thấy video_tts_id cho video ${selectedVideoId}:`, storedVideoTtsId);
+          
+          // Cập nhật state
+          setVideoTtsId(storedVideoTtsId);
+          
+          // Cập nhật localStorage hiện tại với video_tts_id này
+          localStorage.setItem('videoTtsId', storedVideoTtsId);
+          
+          // Đánh dấu là đã lồng tiếng xong
+          setIsDubbingComplete(true);
+          
+          // Lấy video preview
+          getVideoPreview(storedVideoTtsId);
+        } else {
+          console.log(`Không tìm thấy video_tts_id cho video ${selectedVideoId}`);
+          setIsDubbingComplete(false);
+          setVideoTtsId(null);
+        }
+      } catch (error) {
+        console.error('Lỗi khi đọc videoTtsMap từ localStorage:', error);
+      }
+    }
+  }, [selectedVideoId]);
+  
+  // Cleanup khi component unmount
+  useEffect(() => {
+    return () => {
+      // Khi component unmount, revoke URL để tránh memory leak
+      if (videoUrl) {
+        URL.revokeObjectURL(videoUrl);
+      }
+    };
+  }, [videoUrl]);
 
   // Chuyển đổi voiceType thành giá trị voice cho API (1: nam, 2: nữ)
   const getVoiceParam = () => voiceType === "male" ? "1" : "2";
@@ -50,14 +95,14 @@ export const Dubbing = () => {
         setShowMenuItem(false);
         setActiveMenuItem(null);
         
-        // Nếu có video đang phát, dừng lại
-        if (videoUrl) {
-          URL.revokeObjectURL(videoUrl);
-          setVideoUrl(null);
-        }
+        // Không xóa video URL khi đóng form để có thể sử dụng lại khi mở lại
+        // Chỉ revoke URL khi component unmount (sẽ được xử lý trong useEffect cleanup)
         
         // Hiển thị lại tùy chọn tải xuống khi đóng form
         setShowDownloadOption(true);
+        
+        // Không xóa videoTtsId từ localStorage khi đóng form
+        // để có thể sử dụng lại trong component Render
         break;
       case "dubbing":
         // Kiểm tra xem người dùng đã đăng nhập chưa
@@ -92,6 +137,24 @@ export const Dubbing = () => {
             // Lưu video_tts_id từ kết quả
             if (result.video_tts_id) {
               setVideoTtsId(result.video_tts_id);
+              
+              // Lưu video_tts_id vào localStorage để các component khác có thể sử dụng
+              localStorage.setItem('videoTtsId', result.video_tts_id);
+              
+              // Lưu video_tts_id theo video_id vào localStorage
+              try {
+                // Lấy map hiện tại hoặc tạo mới nếu chưa có
+                const videoTtsMap = JSON.parse(localStorage.getItem('videoTtsMap') || '{}');
+                
+                // Thêm/cập nhật mapping cho video hiện tại
+                videoTtsMap[selectedVideoId] = result.video_tts_id;
+                
+                // Lưu lại vào localStorage
+                localStorage.setItem('videoTtsMap', JSON.stringify(videoTtsMap));
+                console.log(`Đã lưu video_tts_id cho video ${selectedVideoId}:`, result.video_tts_id);
+              } catch (error) {
+                console.error('Lỗi khi lưu videoTtsMap vào localStorage:', error);
+              }
               
               // Gọi API để lấy video
               getVideoPreview(result.video_tts_id);
@@ -205,6 +268,18 @@ export const Dubbing = () => {
         throw new Error("Bạn cần đăng nhập để xem video");
       }
 
+      // Kiểm tra xem có video URL đã lưu trong localStorage không
+      try {
+        const videoUrlMap = JSON.parse(localStorage.getItem('videoUrlMap') || '{}');
+        if (videoUrlMap[videoTtsId]) {
+          console.log(`Sử dụng video URL đã lưu cho video_tts_id ${videoTtsId}`);
+          // Không sử dụng URL trực tiếp từ localStorage vì blob URL không tồn tại giữa các phiên
+          // Thay vào đó, chúng ta vẫn tải lại video từ server
+        }
+      } catch (error) {
+        console.error('Lỗi khi đọc videoUrlMap từ localStorage:', error);
+      }
+
       const response = await fetch(`http://localhost:8000/api/v1/videos/videotts/${videoTtsId}`, {
         method: 'GET',
         headers: {
@@ -223,6 +298,7 @@ export const Dubbing = () => {
       const videoBlob = await response.blob();
       const videoObjectUrl = URL.createObjectURL(videoBlob);
       
+      // Lưu URL vào state
       setVideoUrl(videoObjectUrl);
       setIsLoading(false);
       

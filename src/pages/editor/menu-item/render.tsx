@@ -1,6 +1,9 @@
 import { SelectEffect } from "@/components/SelectEffect";
 import { ActionButton } from "@/components/ActionButton";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import useAuthStore from "@/store/use-auth-store";
+import useVideoStore from "@/store/use-video-store";
+import useLayoutStore from "../store/use-layout-store";
 
 interface SelectOption {
   value: string;
@@ -31,9 +34,9 @@ const BITRATE_OPTIONS: SelectOption[] = [
 ];
 
 const FORMAT_OPTIONS: SelectOption[] = [
-  { value: "mp4", label: "MP4" },
-  { value: "mkv", label: "MKV" },
-  { value: "avi", label: "AVI" }
+  { value: "mp4", label: "MP4" }
+  // { value: "mkv", label: "MKV" },
+  // { value: "avi", label: "AVI" }
 ];
 
 export const Render = () => {
@@ -43,23 +46,156 @@ export const Render = () => {
   const [encoding, setEncoding] = useState("h264");
   const [bitrate, setBitrate] = useState("medium");
   const [format, setFormat] = useState("mp4");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [videoTtsId, setVideoTtsId] = useState<string | null>(null);
+  const [hasVideoToExport, setHasVideoToExport] = useState(false);
+  
+  const { accessToken } = useAuthStore();
+  const { selectedVideoId } = useVideoStore();
+  const { setShowMenuItem, setActiveMenuItem } = useLayoutStore();
+  
+  // Kiểm tra xem có video_tts_id trong localStorage không khi component mount
+  useEffect(() => {
+    // Đầu tiên kiểm tra videoTtsId hiện tại trong localStorage
+    const storedVideoTtsId = localStorage.getItem('videoTtsId');
+    
+    // Sau đó kiểm tra xem có video_tts_id cho video hiện tại không
+    if (selectedVideoId) {
+      try {
+        // Lấy map của video_id -> video_tts_id từ localStorage
+        const videoTtsMap = JSON.parse(localStorage.getItem('videoTtsMap') || '{}');
+        
+        // Kiểm tra xem có video_tts_id cho video này không
+        if (videoTtsMap[selectedVideoId]) {
+          const mappedVideoTtsId = videoTtsMap[selectedVideoId];
+          console.log(`Đã tìm thấy video_tts_id cho video ${selectedVideoId}:`, mappedVideoTtsId);
+          
+          // Cập nhật state
+          setVideoTtsId(mappedVideoTtsId);
+          setHasVideoToExport(true);
+          
+          // Cập nhật localStorage hiện tại với video_tts_id này
+          localStorage.setItem('videoTtsId', mappedVideoTtsId);
+          return;
+        }
+      } catch (error) {
+        console.error('Lỗi khi đọc videoTtsMap từ localStorage:', error);
+      }
+    }
+    
+    // Nếu không tìm thấy trong map, sử dụng videoTtsId hiện tại (nếu có)
+    if (storedVideoTtsId) {
+      setVideoTtsId(storedVideoTtsId);
+      setHasVideoToExport(true);
+      console.log('Đã tìm thấy video_tts_id trong localStorage:', storedVideoTtsId);
+    } else {
+      setHasVideoToExport(false);
+      console.log('Không tìm thấy video_tts_id trong localStorage');
+    }
+  }, [selectedVideoId]);
+
+  // Hàm để tải xuống video từ API
+  const downloadVideo = async (videoTtsId: string) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      setSuccess(null);
+      
+      // Kiểm tra xem có access token không
+      if (!accessToken) {
+        throw new Error("Bạn cần đăng nhập để tải xuống video");
+      }
+
+      const response = await fetch(`http://localhost:8000/api/v1/videos/videotts/${videoTtsId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      });
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error("Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại");
+        }
+        throw new Error(`Lỗi HTTP: ${response.status}`);
+      }
+      
+      // Lấy dữ liệu blob từ response
+      const videoBlob = await response.blob();
+      
+      // Tạo đối tượng URL cho blob
+      const url = window.URL.createObjectURL(videoBlob);
+      
+      // Tạo thẻ a để tải xuống
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `video-xuất-bản-${Date.now()}.${format}`;
+      
+      // Thêm thẻ a vào body, click để tải xuống, và xóa thẻ
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      console.log("Đã tải xuống video thành công");
+      
+      // Hiển thị thông báo thành công
+      setSuccess("Video đã được tải xuống thành công!");
+      
+      // Đóng modal sau 2 giây
+      setTimeout(() => {
+        setShowMenuItem(false);
+        setActiveMenuItem(null);
+      }, 2000);
+    } catch (error) {
+      console.error("Lỗi khi tải xuống video:", error);
+      setError(error instanceof Error ? error.message : "Lỗi không xác định khi tải xuống video");
+      if (error instanceof Error && error.message.includes("401")) {
+        alert("Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại");
+      } else {
+        alert(error instanceof Error ? error.message : "Lỗi khi tải xuống video");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleAction = (action: string) => {
     switch (action) {
       case "backup":
         // Xử lý tải backup
+        alert("Chức năng tải backup đang được phát triển");
         break;
       case "srt":
         // Xử lý tải SRT
+        alert("Chức năng tải SRT đang được phát triển");
         break;
       case "save":
         // Xử lý lưu
+        alert("Chức năng lưu đang được phát triển");
         break;
       case "publish":
-        // Xử lý xuất bản
+        // Xử lý xuất bản và tải xuống video
+        if (!selectedVideoId) {
+          alert("Vui lòng chọn một video trước khi xuất bản");
+          return;
+        }
+        
+        if (!videoTtsId) {
+          alert("Không tìm thấy video đã lồng tiếng. Vui lòng lồng tiếng video trước khi xuất bản.");
+          return;
+        }
+        
+        // Tải xuống video
+        downloadVideo(videoTtsId);
         break;
       case "cancel":
-        // Xử lý hủy
+        // Xử lý hủy - đóng modal
+        setShowMenuItem(false);
+        setActiveMenuItem(null);
         break;
     }
   };
@@ -123,6 +259,13 @@ export const Render = () => {
 
       <div className="relative z-10 p-6">
         <h2 className="mb-2 text-ls">Xuất bản</h2>
+        
+        {/* Hiển thị trạng thái video */}
+        <div className={`text-sm ${hasVideoToExport ? 'text-green-400' : 'text-yellow-400'} mb-4`}>
+          {hasVideoToExport 
+            ? "Video đã lồng tiếng sẵn sàng để xuất bản" 
+            : "Chưa có video lồng tiếng. Vui lòng lồng tiếng video trước khi xuất bản."}
+        </div>
 
         <br />
 
@@ -207,32 +350,60 @@ export const Render = () => {
         <br />
         <br />
 
+        {/* Hiển thị thông báo lỗi nếu có */}
+        {error && (
+          <div className="mt-4 p-2 bg-red-500/20 text-red-200 rounded-md text-sm">
+            {error}
+          </div>
+        )}
+        
+        {/* Hiển thị thông báo thành công nếu có */}
+        {success && (
+          <div className="mt-4 p-2 bg-green-500/20 text-green-200 rounded-md text-sm">
+            {success}
+          </div>
+        )}
+        
         {/* Nút hành động */}
         <div className="mt-4 flex justify-end gap-2">
-          < ActionButton
+          {/* <ActionButton
             label="Tải backup"
             onClick={() => handleAction("backup")}
             variant="tree"
-          />
-          <ActionButton
+            disabled={isLoading}
+          /> */}
+          {/* <ActionButton
             label="Tải .SRT"
             onClick={() => handleAction("srt")}
             variant="pink"
-          />
-          <ActionButton
+            disabled={isLoading}
+          /> */}
+          {/* <ActionButton
             label="Lưu"
             onClick={() => handleAction("save")}
             variant="green"
-          />
-          <ActionButton
-            label="Xuất bản"
-            onClick={() => handleAction("publish")}
-            variant="blue"
-          />
+            disabled={isLoading}
+          /> */}
+          {isLoading ? (
+            <button 
+              className="px-4 py-2 bg-blue-600 text-white rounded-md flex items-center justify-center gap-2 opacity-70 cursor-not-allowed"
+              disabled
+            >
+              <div className="w-4 h-4 border-2 border-t-transparent border-white rounded-full animate-spin"></div>
+              Đang tải...
+            </button>
+          ) : (
+            <ActionButton
+              label="Tải xuống"
+              onClick={() => handleAction("publish")}
+              variant="blue"
+            />
+          )}
           <ActionButton
             label="Hủy"
             onClick={() => handleAction("cancel")}
             variant="red"
+            disabled={isLoading}
           />
         </div>
       </div>
